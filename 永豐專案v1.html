@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主管考核系統 PoC｜AI 智慧教練</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>
+  [x-cloak]{display:none!important}
+  body{font-family:"Inter","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;background:#f4f7fb}
+  .scroll-thin::-webkit-scrollbar{width:6px}.scroll-thin::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:9px}
+  .dot::after{content:"";display:inline-block;width:6px;height:6px;margin-left:3px;border-radius:9px;background:#94a3b8;animation:b 1s infinite}
+  @keyframes b{50%{opacity:.2}}
+  .hl{transition:box-shadow .3s,background-color .3s}
+</style>
+</head>
+<body class="text-slate-700 antialiased" x-data="app()" x-cloak>
+
+<!-- 頂部導覽列 -->
+<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 grid place-items-center text-white font-bold shrink-0">HR</div>
+      <div class="min-w-0">
+        <div class="text-sm font-semibold text-slate-900 truncate">永豐銀行 / 法令遵循處</div>
+        <div class="text-xs text-slate-500 truncate">2025 年度主管考核 · 初評階段</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2" x-show="view==='detail'">
+      <button @click="back()" class="text-sm px-3 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 whitespace-nowrap">← 員工總覽</button>
+      <select x-model="selId" @change="tab='A'" class="rounded-lg border-slate-300 border bg-white text-sm px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none max-w-[160px] sm:max-w-none">
+        <template x-for="e in emps" :key="e.id"><option :value="e.id" x-text="e.name+'（'+statusOf(e)+'）'"></option></template>
+      </select>
+    </div>
+    <div class="text-xs text-slate-500 hidden sm:block" x-show="view==='list'" x-text="'評核進度 '+doneCount()+' / '+emps.length"></div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+<!-- ================= 視圖一：員工總覽 ================= -->
+<div x-show="view==='list'" class="space-y-6">
+  <div>
+    <h1 class="text-xl font-semibold text-slate-900">部門員工總覽</h1>
+    <p class="text-sm text-slate-500 mt-1">先瀏覽全部待評核員工與 AI 預判重點，再點選進入個別評核。</p>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <template x-for="c in statCards()" :key="c.l">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div class="text-xs text-slate-400" x-text="c.l"></div>
+        <div class="text-2xl font-bold mt-1" :class="c.c" x-text="c.v"></div>
+      </div>
+    </template>
+  </div>
+
+  <div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+    <div class="flex flex-wrap gap-2">
+      <template x-for="f in filters" :key="f">
+        <button @click="filter=f" class="text-xs px-3 py-1.5 rounded-full border transition"
+          :class="filter===f?'bg-blue-600 text-white border-blue-600':'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'"
+          x-text="f+'（'+countBy(f)+'）'"></button>
+      </template>
+    </div>
+    <input x-model="q" placeholder="搜尋姓名或員編" class="rounded-lg border border-slate-300 px-3 py-2 text-sm w-full sm:w-60 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+    <template x-for="e in visible()" :key="e.id">
+      <button @click="open(e.id)" class="text-left bg-white rounded-2xl border border-slate-200 shadow-sm p-5 hover:border-blue-300 hover:shadow-md transition group">
+        <div class="flex items-start gap-3">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white font-semibold grid place-items-center shrink-0" x-text="e.name.slice(-2)"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-slate-900" x-text="e.name"></span>
+              <span class="text-[11px] text-slate-400" x-text="e.id"></span>
+            </div>
+            <div class="text-xs text-slate-500 truncate" x-text="e.title+' · '+e.level"></div>
+          </div>
+          <span class="text-[11px] px-2 py-0.5 rounded-full font-medium whitespace-nowrap" :class="statusClass(e)" x-text="statusOf(e)"></span>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <div class="text-slate-400 mb-1">近三年考績</div>
+            <div class="flex gap-1">
+              <template x-for="h in e.history" :key="h.year"><span class="px-1.5 py-0.5 rounded-md font-medium" :class="gradeColor(h.grade)" x-text="h.grade"></span></template>
+            </div>
+          </div>
+          <div>
+            <div class="text-slate-400 mb-1">AI 建議等第</div>
+            <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-semibold" x-text="e.suggest+'・'+e.conf+'%'"></span>
+          </div>
+        </div>
+        <div class="mt-3 flex items-center justify-between rounded-lg px-3 py-2 text-xs" :class="Math.abs(gapOf(e))>=0.5?'bg-amber-50 text-amber-700':'bg-emerald-50 text-emerald-700'">
+          <span x-text="Math.abs(gapOf(e))>=0.5?'⚠ 自他評落差需校準':'✓ 自他評一致'"></span>
+          <b x-text="(gapOf(e)>0?'+':'')+gapOf(e).toFixed(2)"></b>
+        </div>
+        <div class="mt-3 text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition text-right">進入評核 →</div>
+      </button>
+    </template>
+  </div>
+  <div x-show="!visible().length" class="text-center text-sm text-slate-400 py-10">沒有符合條件的員工</div>
+</div>
+
+<!-- ================= 視圖二：個別員工評核 ================= -->
+<div x-show="view==='detail'" class="space-y-6">
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- 左：員工 360 檔案 -->
+    <section class="lg:col-span-7 space-y-6">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <div class="flex items-start gap-4">
+          <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white text-2xl font-semibold grid place-items-center shrink-0" x-text="emp.name.slice(-2)"></div>
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-xl font-semibold text-slate-900" x-text="emp.name"></h2>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100" x-text="'員編 '+emp.id"></span>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600" x-text="emp.level"></span>
+            </div>
+            <p class="text-sm text-slate-500 mt-1" x-text="emp.title"></p>
+          </div>
+        </div>
+        <dl class="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-5 text-sm">
+          <div><dt class="text-xs text-slate-400">集團年資</dt><dd class="font-medium" x-text="emp.groupYears+' 年'"></dd></div>
+          <div><dt class="text-xs text-slate-400">部門年資</dt><dd class="font-medium" x-text="emp.deptYears+' 年'"></dd></div>
+          <div class="col-span-2 sm:col-span-1"><dt class="text-xs text-slate-400">學歷</dt><dd class="font-medium" x-text="emp.edu"></dd></div>
+          <div class="col-span-2 sm:col-span-3"><dt class="text-xs text-slate-400">前職經歷摘要</dt><dd class="font-medium" x-text="emp.prev"></dd></div>
+        </dl>
+      </div>
+
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div class="flex gap-1 px-4 pt-3 border-b border-slate-200 overflow-x-auto">
+          <template x-for="t in tabs" :key="t.k">
+            <button @click="tab=t.k" :class="tab===t.k?'border-blue-600 text-blue-700':'border-transparent text-slate-500 hover:text-slate-800'" class="px-3 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition" x-text="t.l"></button>
+          </template>
+        </div>
+        <div class="p-6">
+          <div x-show="tab==='A'" class="space-y-4">
+            <template x-for="h in emp.history" :key="h.year">
+              <div class="rounded-xl border border-slate-200 p-4 hover:border-blue-200 transition">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-semibold text-slate-900" x-text="h.year+' 年度'"></span>
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold" :class="gradeColor(h.grade)" x-text="h.grade"></span>
+                </div>
+                <p class="text-sm mt-2 leading-relaxed" x-text="h.comment"></p>
+                <p class="text-xs text-slate-500 mt-2 pl-3 border-l-2 border-blue-200" x-text="h.detail"></p>
+              </div>
+            </template>
+          </div>
+          <div x-show="tab==='B'" class="space-y-5">
+            <template x-for="r in rows360()" :key="r.l">
+              <div>
+                <div class="flex justify-between text-sm mb-1.5"><span x-text="r.l"></span><span class="font-semibold text-slate-900" x-text="r.v.toFixed(1)"></span></div>
+                <div class="h-2.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full transition-all duration-500" :class="r.c" :style="'width:'+r.v*10+'%'"></div></div>
+              </div>
+            </template>
+            <div class="rounded-xl p-4 flex items-center justify-between" :class="Math.abs(gapOf(emp))>=0.5?'bg-amber-50 border border-amber-200':'bg-emerald-50 border border-emerald-200'">
+              <div>
+                <div class="text-xs text-slate-500">自他評差異（自評 − 他評平均）</div>
+                <div class="text-xs mt-0.5" x-text="Math.abs(gapOf(emp))>=0.5?'落差明顯，建議於面談中釐清':'認知一致，落差在合理範圍'"></div>
+              </div>
+              <div class="text-2xl font-bold" :class="Math.abs(gapOf(emp))>=0.5?'text-amber-600':'text-emerald-600'" x-text="(gapOf(emp)>0?'+':'')+gapOf(emp).toFixed(2)"></div>
+            </div>
+          </div>
+          <ol x-show="tab==='C'" class="relative border-l-2 border-blue-100 ml-2 space-y-6">
+            <template x-for="t in emp.timeline" :key="t.date">
+              <li class="pl-6 relative">
+                <span class="absolute -left-[9px] top-1 w-4 h-4 rounded-full bg-white border-4" :class="t.type==='升遷'?'border-emerald-500':t.type==='輪調'?'border-indigo-500':'border-blue-500'"></span>
+                <div class="flex items-center gap-2"><span class="text-xs text-slate-400" x-text="t.date"></span><span class="text-[11px] px-2 rounded-full bg-slate-100" x-text="t.type"></span></div>
+                <div class="text-sm font-medium text-slate-900 mt-0.5" x-text="t.text"></div>
+              </li>
+            </template>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- 右：AI Co-pilot -->
+    <aside class="lg:col-span-5">
+      <div class="lg:sticky lg:top-20 space-y-4">
+        <div class="rounded-2xl p-5 text-white shadow-lg bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-600">
+          <div class="flex items-center gap-2 text-xs font-medium text-blue-100">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2l1.8 4.6L16.5 8l-4.7 1.4L10 14l-1.8-4.6L3.5 8l4.7-1.4z"/></svg>AI 考核綜合建議
+          </div>
+          <p class="mt-2 text-sm leading-relaxed" x-text="emp.aiAdvice"></p>
+          <div class="mt-3 flex gap-2 text-xs">
+            <span class="px-2 py-1 rounded-full bg-white/15">建議等第：<b x-text="emp.suggest"></b></span>
+            <span class="px-2 py-1 rounded-full bg-white/15">信心度 <b x-text="emp.conf+'%'"></b></span>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[540px]">
+          <div class="px-5 py-3 border-b border-slate-100">
+            <div class="text-sm font-semibold text-slate-900">辯論與校準 <span class="text-xs font-normal text-slate-400">Debate &amp; Calibration</span></div>
+            <div class="text-[11px] text-slate-400 mt-0.5">AI 的建議可一鍵套用至下方評分，並自動留下調整紀錄</div>
+          </div>
+          <div class="flex-1 overflow-y-auto scroll-thin p-4 space-y-4" x-ref="chat">
+            <template x-for="m in s.msgs" :key="m.id">
+              <div :id="'msg-'+selId+'-'+m.id" class="flex flex-col scroll-mt-24" :class="m.r==='u'?'items-end':'items-start'">
+                <div class="hl max-w-[88%] text-sm leading-relaxed rounded-2xl px-3.5 py-2.5 whitespace-pre-line"
+                     :class="(m.r==='u'?'bg-blue-600 text-white rounded-br-sm':'bg-slate-100 text-slate-700 rounded-bl-sm')+(hl==='m'+m.id?' ring-2 ring-amber-400':'')"
+                     x-text="m.t"></div>
+                <div x-show="m.actions && m.actions.length" class="mt-2 w-[94%] space-y-1.5">
+                  <template x-for="(a,ai) in m.actions" :key="ai">
+                    <div class="rounded-xl border p-2.5 text-xs flex items-center gap-2" :class="isApplied(m,ai)?'border-emerald-200 bg-emerald-50':'border-blue-100 bg-blue-50/60'">
+                      <div class="flex-1 min-w-0">
+                        <div class="font-medium text-slate-800" x-text="a.label+' → '+showVal(a)"></div>
+                        <div class="text-slate-500 mt-0.5" x-show="a.why" x-text="a.why"></div>
+                      </div>
+                      <button x-show="!isApplied(m,ai)" @click="apply(m,ai)" :disabled="locked()" class="shrink-0 px-2.5 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40">套用至評分</button>
+                      <button x-show="isApplied(m,ai)" @click="jumpField(a.kind,a.idx)" class="shrink-0 px-2.5 py-1 rounded-md bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100">已套用 ✓ 跳至評分 ↓</button>
+                    </div>
+                  </template>
+                  <button x-show="pendingCount(m)>1" @click="applyAll(m)" :disabled="locked()" class="text-xs text-blue-600 hover:underline disabled:opacity-40" x-text="'全部套用（'+pendingCount(m)+' 項）'"></button>
+                </div>
+              </div>
+            </template>
+            <div x-show="typing" class="text-xs text-slate-400">AI 教練思考中<span class="dot"></span></div>
+          </div>
+          <div class="px-4 pt-3 flex flex-wrap gap-2">
+            <template x-for="qq in quick" :key="qq.k">
+              <button @click="ask(qq)" class="text-xs px-3 py-1.5 rounded-full border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition" x-text="qq.l"></button>
+            </template>
+          </div>
+          <div class="p-4 flex gap-2">
+            <input x-model="draft" @keydown.enter="send()" placeholder="輸入您的補充考量…" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <button @click="send()" class="px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition">送出</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 主管考核輸入表單 -->
+  <section class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-5">
+      <h2 class="text-base font-semibold text-slate-900">主管考核輸入 <span class="text-xs font-normal text-slate-400">Manager Assessment</span></h2>
+      <span class="text-xs px-2 py-1 rounded-full border" :class="statusClass(emp)" x-text="statusOf(emp)"></span>
+    </div>
+
+    <div x-show="locked()" class="mb-5 rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex flex-wrap items-center justify-between gap-3 text-sm text-emerald-800">
+      <span>✔ 本員考核已送交人資複審，目前為唯讀。</span>
+      <span class="flex gap-2">
+        <button @click="unlock()" class="px-3 py-1.5 rounded-lg border border-emerald-300 bg-white hover:bg-emerald-100 text-xs">撤回並重新編輯</button>
+        <button @click="nextPending()" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700">評核下一位 →</button>
+      </span>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="space-y-4">
+        <label id="fld-grade" class="hl block text-sm font-medium scroll-mt-24 rounded-lg p-1 -m-1" :class="hlc('grade')">績效等第
+          <select :value="s.form.grade" @change="setField('grade',null,$event.target.value,'manual')" :disabled="locked()" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-50">
+            <option value="">請選擇…</option><option>特優</option><option>優</option><option>甲上</option><option>乙</option><option>丙</option>
+          </select>
+        </label>
+        <label id="fld-rank" class="hl block text-sm font-medium scroll-mt-24 rounded-lg p-1 -m-1" :class="hlc('rank')">落點數字
+          <input type="number" min="1" max="100" x-model="s.form.rank" @input="prefix()" :disabled="locked()" placeholder="例：3" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-50">
+        </label>
+        <div class="rounded-xl bg-slate-50 p-4">
+          <div class="text-xs text-slate-500">指標加權平均</div>
+          <div class="text-3xl font-bold text-blue-700" x-text="avg()"></div>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-medium">細分指標（0–100）</div>
+          <span class="text-[11px] text-slate-400 flex items-center gap-1">🔒 指標與權重由人資統一設定</span>
+        </div>
+        <template x-for="(k,i) in s.form.kpis" :key="i">
+          <div :id="'fld-kpi-'+i" class="hl rounded-xl border border-slate-200 p-3 scroll-mt-24" :class="hlc('kpi-'+i)">
+            <div class="flex items-center gap-2">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-slate-800" x-text="k.n"></div>
+                <div class="text-[11px] text-slate-400">權重 <span x-text="k.w"></span>%（固定）</div>
+              </div>
+              <input type="number" min="0" max="100" :value="k.s" @change="setKpiManual(i,$event.target.value)" :disabled="locked()" placeholder="分數" class="w-20 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-right disabled:bg-slate-50">
+            </div>
+            <template x-if="lastLog(i)">
+              <div class="mt-2 text-[11px] flex items-center justify-between gap-2" :class="lastLog(i).src==='ai'?'text-blue-600':'text-slate-500'">
+                <span x-text="(lastLog(i).src==='ai'?'來自 AI 對話：':'主管手動調整：')+fmt(lastLog(i).from)+' → '+fmt(lastLog(i).to)"></span>
+                <button x-show="lastLog(i).src==='ai'" @click="jumpMsg(lastLog(i).msgId)" class="underline hover:text-blue-800 whitespace-nowrap">查看對話 ↑</button>
+              </div>
+            </template>
+          </div>
+        </template>
+      </div>
+
+      <div id="fld-comment" class="hl flex flex-col scroll-mt-24 rounded-lg p-1 -m-1" :class="hlc('comment')">
+        <label class="text-sm font-medium">考績評語
+          <textarea x-model="s.form.comment" :disabled="locked()" rows="9" class="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm leading-relaxed focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-slate-50"></textarea>
+        </label>
+        <p class="text-[11px] text-slate-400 mt-1">開頭會依落點數字自動帶入「姓名（落點）該員」。可在左側對話中點「生成綜合評語建議」取得草稿。</p>
+      </div>
+    </div>
+
+    <!-- 調整紀錄 -->
+    <div class="mt-6 pt-5 border-t border-slate-100">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-slate-900">評分調整紀錄 <span class="text-xs font-normal text-slate-400">Audit Trail</span></h3>
+        <span class="text-xs text-slate-400" x-text="s.log.length+' 筆'"></span>
+      </div>
+      <div x-show="!s.log.length" class="text-xs text-slate-400 py-3">尚無調整紀錄。從 AI 對話套用建議或手動修改指標分數後，會顯示在這裡。</div>
+      <ul class="space-y-2">
+        <template x-for="l in s.log" :key="l.id">
+          <li class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs rounded-lg border px-3 py-2" :class="l.reverted?'bg-slate-50 border-slate-200 text-slate-400':'border-slate-200'">
+            <span class="text-slate-400" x-text="l.time"></span>
+            <span class="px-1.5 py-0.5 rounded-md font-medium" :class="l.src==='ai'?'bg-blue-50 text-blue-700':'bg-slate-100 text-slate-600'" x-text="l.src==='ai'?'AI 對話套用':'主管手動'"></span>
+            <span :class="l.reverted?'line-through':''" x-text="l.label+'：'+fmt(l.from,l.kind)+' → '+fmt(l.to,l.kind)"></span>
+            <span x-show="l.reverted" class="text-slate-400">（已復原）</span>
+            <span class="ml-auto flex gap-3">
+              <button x-show="l.src==='ai'" @click="jumpMsg(l.msgId)" class="text-blue-600 hover:underline">查看來源對話 ↑</button>
+              <button x-show="!l.reverted && !locked()" @click="revert(l)" class="text-slate-500 hover:text-slate-800 hover:underline">復原</button>
+            </span>
+          </li>
+        </template>
+      </ul>
+    </div>
+
+    <div class="mt-6 pt-5 border-t border-slate-100 flex justify-end gap-3">
+      <button @click="reset()" :disabled="locked()" class="px-4 py-2 rounded-lg text-sm border border-slate-300 hover:bg-slate-50 disabled:opacity-40">重設</button>
+      <button @click="submit()" :disabled="locked()" class="px-5 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition disabled:opacity-40">送出考核</button>
+    </div>
+  </section>
+</div>
+
+<p class="text-center text-xs text-slate-400 py-6">PoC 示範介面・所有資料均為虛構，AI 回覆為預設腳本模擬</p>
+</main>
+
+<!-- Toast -->
+<div x-show="toast" x-transition class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-sm px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2">
+  <span class="text-emerald-400">✔</span><span x-text="toastMsg"></span>
+</div>
+
+<script>
+const KPIS=[{n:'專業能力',w:30},{n:'工作成果',w:30},{n:'團隊協作',w:20},{n:'創新與學習',w:20}];
+const defKpi=()=>KPIS.map(k=>({n:k.n,w:k.w,s:''}));
+
+function app(){
+  const H=(y,g,c,d)=>({year:y,grade:g,comment:c,detail:d});
+  const emps=[
+  { id:'A10231', name:'張偉銘', title:'法令遵循處 · 資深法遵專員', level:'職等 9', groupYears:11, deptYears:6,
+    edu:'臺灣大學 法律學系碩士', prev:'前職為會計師事務所金融業查核專員（3 年），專長洗錢防制與法規諮詢。',
+    r:{self:8.6,peer:8.5,sub:8.7,oth:8.4}, suggest:'優', conf:86, rank:3,
+    aiAdvice:'該員三年表現皆為優等以上，360 評鑑同儕評價高達 8.5 分，建議今年可維持「優」等，並聚焦於跨部門協作表現。',
+    ask:'主管您好，該員自評與他評落差極小，但跨部門評價略低於部門內。請問今年其在專案溝通上，是否有其他補充考量？',
+    kpiSug:[[90,'法規解析精準，AML 改版零缺失'],[88,'制度如期上線、內稽零缺失'],[76,'跨部門評價低於部門內'],[82,'已建置法規衝擊評估框架']],
+    adj:{idx:2,score:74,why:'若跨部門溝通確有落差，協作項宜再下修'},
+    history:[H(2025,'優','張偉銘（3）該員今年主導洗錢防制制度改版，如期上線並通過內稽查核。','主導 AML 制度改版，查核缺失 0 件；跨部門會議準備度仍可加強。'),
+             H(2024,'優','張偉銘（4）該員法規解析精準，能即時回應業務單位諮詢。','完成 12 項新法規衝擊評估，諮詢回覆時效 1.2 天。'),
+             H(2023,'特優','張偉銘（1）該員於主管機關檢查期間表現突出，獲處級獎勵。','專案獲處級嘉獎一次。')],
+    timeline:[{date:'2014-07',type:'到職',text:'進入集團，任職法令遵循處法務專員'},{date:'2018-01',type:'輪調',text:'輪調至風險管理處，負責作業風險評估'},{date:'2019-09',type:'輪調',text:'返回法令遵循處，任法遵專員'},{date:'2022-04',type:'升遷',text:'升任資深法遵專員（職等 9）'}],
+    reply:{gen:'張偉銘（3）該員專業紮實，今年主導洗錢防制制度改版並如期上線，內稽查核零缺失。法規解析與落地能力俱佳，建議持續加強跨部門溝通節奏與前置協調，以提升專案推動效率。',
+           swot:'【優勢】法規解析精準、制度落地能力強、自他評一致\n【隱憂】跨部門溝通評價偏低、對初階同仁的經驗傳承較少',
+           ask:'模擬面談提問：\n1. 在 AML 改版中，您如何與業務單位取得共識？\n2. 若重來一次，哪個溝通環節會調整？\n3. 未來一年想承擔哪類跨處專案？'}},
+  { id:'A10458', name:'李雅婷', title:'法令遵循處 · 法遵專員', level:'職等 8', groupYears:5, deptYears:2,
+    edu:'政治大學 企業管理學系', prev:'前職為外商銀行內控稽核專員（2 年）。',
+    r:{self:8.9,peer:7.4,sub:7.8,oth:7.5}, suggest:'甲上', conf:74, rank:8,
+    aiAdvice:'該員 2025 年表現穩健上升，但自評（8.9）明顯高於他評平均（7.6），建議評為「甲上」並於面談釐清自我期望與團隊回饋的落差。',
+    ask:'主管您好，該員自評高於他評約 1.3 分。請問您認為這是因為專案貢獻未被充分看見，還是協作方式上有改善空間？',
+    kpiSug:[[82,'獨立審查 86 件，品質穩定'],[84,'內控自評專案如期完成'],[70,'兩次跨處會議延遲回覆'],[85,'學習速度快，主動爭取專案']],
+    adj:{idx:2,score:66,why:'他評僅 7.5 分，協作項建議再保守評定'},
+    history:[H(2025,'甲上','李雅婷（8）該員今年承接內控自評專案，進度掌握良好。','專案如期完成，但兩次跨處會議延遲回覆。'),
+             H(2024,'甲上','李雅婷（9）該員學習速度快，已能獨立處理例行法遵審查。','獨立審查案件 86 件，退件率 4%。'),
+             H(2023,'乙','李雅婷（15）該員為新進同仁，仍在熟悉法遵業務。','轉調新單位，適應期完成度達標。')],
+    timeline:[{date:'2020-08',type:'到職',text:'進入集團，任職內部稽核處稽核員'},{date:'2023-03',type:'輪調',text:'輪調至法令遵循處，任法遵專員'}],
+    reply:{gen:'李雅婷（8）該員今年承接內控自評專案並如期完成，審查品質穩定。惟跨處協作之回應時效有改善空間，期許未來主動與同儕對齊期望、提升能見度。',
+           swot:'【優勢】學習速度快、審查品質穩定、積極爭取專案\n【隱憂】自他評落差大、跨處回應時效不一',
+           ask:'模擬面談提問：\n1. 您如何看待同儕給出的 7.5 分？\n2. 哪個專案最能代表您今年的貢獻？\n3. 需要主管提供哪些資源以改善協作？'}},
+  { id:'A09876', name:'王志豪', title:'法令遵循處 · 副理', level:'職等 10', groupYears:15, deptYears:9,
+    edu:'政治大學 財務金融研究所碩士', prev:'前職為證券公司風控部專員（4 年）。',
+    r:{self:7.8,peer:8.2,sub:9.1,oth:8.5}, suggest:'優', conf:81, rank:5,
+    aiAdvice:'該員部屬評價高達 9.1 分，領導力突出；自評偏保守（7.8）。建議評「優」，並鼓勵其更主動展現團隊成果與策略貢獻。',
+    ask:'主管您好，該員部屬評價顯著高於自評。請問您是否觀察到他在團隊培育上的具體成果，足以支持更高的落點？',
+    kpiSug:[[84,'制度規劃穩健，風險儀表板已建置'],[86,'年度法遵檢測如期完成'],[90,'團隊零離職、2 位成員晉升'],[80,'策略性議題參與度可再提升']],
+    adj:{idx:2,score:94,why:'部屬評價 9.1 分，協作與領導可上調'},
+    history:[H(2025,'優','王志豪（5）該員帶領 5 人團隊完成年度法遵檢測，團隊士氣佳。','團隊離職率 0%，2 位成員晉升。'),
+             H(2024,'優','王志豪（6）該員制度規劃穩健，與業務單位關係良好。','建置法遵風險儀表板。'),
+             H(2023,'甲上','王志豪（10）該員首年擔任主管職，逐步建立管理節奏。','完成主管職前訓練。')],
+    timeline:[{date:'2011-03',type:'到職',text:'進入集團，任職風險管理處專員'},{date:'2016-06',type:'輪調',text:'輪調至法令遵循處'},{date:'2020-01',type:'升遷',text:'升任襄理（職等 9）'},{date:'2023-01',type:'升遷',text:'升任副理（職等 10）'}],
+    reply:{gen:'王志豪（5）該員今年帶領團隊完成年度法遵檢測，團隊零離職且培育兩位同仁晉升，管理成熟度高。建議未來擴大策略性議題參與，並更主動呈現成果。',
+           swot:'【優勢】團隊培育、領導信任度高、制度規劃穩健\n【隱憂】自評保守、對高階溝通能見度不足',
+           ask:'模擬面談提問：\n1. 您如何培育部屬？有何可複製做法？\n2. 向上溝通時最大的阻力是什麼？\n3. 下一個職涯階段想承擔什麼角色？'}}
+  ];
+
+  const st={};
+  emps.forEach(e=>{ st[e.id]={ status:'todo', n:1, ln:0, log:[],
+    msgs:[{id:1,r:'a',t:e.ask,actions:[]}],
+    form:{grade:'',rank:'',comment:e.name+'（）該員…',kpis:defKpi()} }; });
+
+  return {
+    emps, st, view:'list', selId:emps[0].id, tab:'A', filter:'全部', q:'',
+    typing:false, draft:'', hl:'', toast:false, toastMsg:'',
+    filters:['全部','待評核','評核中','已送出'],
+    tabs:[{k:'A',l:'歷史考績（2023–2025）'},{k:'B',l:'360 評鑑'},{k:'C',l:'輪調與履歷歷程'}],
+    quick:[{k:'gen',l:'生成綜合評語建議'},{k:'swot',l:'分析優勢與隱憂'},{k:'ask',l:'模擬面談提問'}],
+
+    get emp(){ return this.emps.find(e=>e.id===this.selId) },
+    get s(){ return this.st[this.selId] },
+
+    /* ---------- 總覽 ---------- */
+    statusOf(e){
+      const x=this.st[e.id];
+      if(x.status==='done') return '已送出';
+      const f=x.form;
+      return (f.grade||f.rank||x.log.length||f.kpis.some(k=>k.s!==''))?'評核中':'待評核';
+    },
+    statusClass(e){ return {'已送出':'bg-emerald-50 text-emerald-700 border-emerald-200','評核中':'bg-amber-50 text-amber-700 border-amber-200','待評核':'bg-slate-100 text-slate-600 border-slate-200'}[this.statusOf(e)] },
+    countBy(f){ return f==='全部'?this.emps.length:this.emps.filter(e=>this.statusOf(e)===f).length },
+    doneCount(){ return this.countBy('已送出') },
+    visible(){ const q=this.q.trim(); return this.emps.filter(e=>(this.filter==='全部'||this.statusOf(e)===this.filter)&&(!q||e.name.includes(q)||e.id.toLowerCase().includes(q.toLowerCase()))) },
+    statCards(){ return [
+      {l:'部門待評人數',v:this.emps.length,c:'text-slate-900'},
+      {l:'已送出',v:this.countBy('已送出'),c:'text-emerald-600'},
+      {l:'尚未完成',v:this.emps.length-this.countBy('已送出'),c:'text-blue-700'},
+      {l:'自他評落差需校準',v:this.emps.filter(e=>Math.abs(this.gapOf(e))>=0.5).length,c:'text-amber-600'} ] },
+    open(id){ this.selId=id; this.tab='A'; this.view='detail'; window.scrollTo({top:0}); this.scroll() },
+    back(){ this.view='list'; window.scrollTo({top:0}) },
+    nextPending(){ const n=this.emps.find(e=>this.statusOf(e)!=='已送出'); if(n){this.open(n.id)}else{this.back();this.flash('全部員工皆已完成初評')} },
+
+    /* ---------- 檔案 / 360 ---------- */
+    gradeColor(g){return {'特優':'bg-purple-100 text-purple-700','優':'bg-blue-100 text-blue-700','甲上':'bg-emerald-100 text-emerald-700'}[g]||'bg-slate-100 text-slate-600'},
+    rows360(){const r=this.emp.r;return [{l:'個人自評',v:r.self,c:'bg-blue-600'},{l:'同儕平均',v:r.peer,c:'bg-indigo-400'},{l:'部屬平均',v:r.sub,c:'bg-sky-400'},{l:'他評平均（跨單位）',v:r.oth,c:'bg-cyan-400'}]},
+    gapOf(e){const r=e.r;return r.self-(r.peer+r.sub+r.oth)/3},
+
+    /* ---------- 評分表單 ---------- */
+    locked(){ return this.s.status==='done' },
+    unlock(){ this.s.status='draft' },
+    avg(){
+      const k=this.s.form.kpis.filter(x=>x.s!=='');
+      const w=k.reduce((a,b)=>a+b.w,0);
+      return w?(k.reduce((a,b)=>a+b.s*b.w,0)/w).toFixed(1):'—';
+    },
+    prefix(){
+      const f=this.s.form, p=this.emp.name+'（'+f.rank+'）該員';
+      f.comment=/^.*?該員/.test(f.comment)?f.comment.replace(/^.*?該員/,p):p+'…';
+    },
+    raw(kind,idx,val){
+      const f=this.s.form;
+      if(kind==='kpi') f.kpis[idx].s=val;
+      else if(kind==='grade') f.grade=val;
+      else if(kind==='rank'){ f.rank=val; this.prefix() }
+      else f.comment=val;
+    },
+    cur(kind,idx){ const f=this.s.form; return kind==='kpi'?f.kpis[idx].s:kind==='grade'?f.grade:kind==='rank'?f.rank:f.comment },
+    labelOf(kind,idx){ return kind==='kpi'?KPIS[idx].n:{grade:'績效等第',rank:'落點數字',comment:'考績評語'}[kind] },
+    setField(kind,idx,val,src,msgId,aiIdx){
+      const from=this.cur(kind,idx);
+      if(src==='manual' && String(from)===String(val)) return;
+      this.raw(kind,idx,val);
+      const s=this.s;
+      s.log.unshift({id:++s.ln,kind,idx,label:this.labelOf(kind,idx),from,to:val,src,msgId:msgId||null,aiIdx:aiIdx??null,
+        time:new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}),reverted:false});
+      if(s.status==='todo') s.status='draft';
+    },
+    setKpiManual(i,v){
+      const val=v===''?'':Math.min(100,Math.max(0,Number(v)));
+      this.setField('kpi',i,val,'manual');
+    },
+    revert(l){ this.raw(l.kind,l.idx,l.from); l.reverted=true },
+    lastLog(i){ return this.s.log.find(l=>l.kind==='kpi'&&l.idx===i&&!l.reverted) },
+    fmt(v,kind){ if(v===''||v==null) return '—'; if(kind==='comment') return '評語內容'; return v },
+    reset(){
+      const e=this.emp, s=this.s;
+      s.form={grade:'',rank:'',comment:e.name+'（）該員…',kpis:defKpi()};
+      s.log=[]; s.status='todo';
+    },
+    submit(){
+      const f=this.s.form;
+      if(!f.grade||!f.rank){ this.flash('請先選擇績效等第並填寫落點數字'); return }
+      if(f.kpis.some(k=>k.s==='')){ this.flash('請完成所有細分指標評分'); return }
+      this.s.status='done';
+      this.flash('考核儲存成功，已送交人資複審');
+    },
+
+    /* ---------- AI 對話 ↔ 評分連動 ---------- */
+    showVal(a){ return a.kind==='comment'?'評語草稿':a.kind==='kpi'?a.val+' 分':a.val },
+    isApplied(m,ai){ return this.s.log.some(l=>l.msgId===m.id&&l.aiIdx===ai&&!l.reverted) },
+    pendingCount(m){ return (m.actions||[]).filter((a,i)=>!this.isApplied(m,i)).length },
+    apply(m,ai){
+      if(this.locked()){ this.flash('已送交，請先撤回再調整'); return }
+      const a=m.actions[ai];
+      this.setField(a.kind,a.idx,a.val,'ai',m.id,ai);
+      this.jumpField(a.kind,a.idx);
+    },
+    applyAll(m){
+      if(this.locked()) return;
+      m.actions.forEach((a,i)=>{ if(!this.isApplied(m,i)) this.setField(a.kind,a.idx,a.val,'ai',m.id,i) });
+      this.flash('已套用 AI 建議，可於下方評分區檢視');
+    },
+    mark(key){ this.hl=key; clearTimeout(this._t); this._t=setTimeout(()=>this.hl='',2200) },
+    hlc(key){ return this.hl===key?'ring-2 ring-amber-400 bg-amber-50':'' },
+    jumpField(kind,idx){
+      const key=kind==='kpi'?'kpi-'+idx:kind;
+      const el=document.getElementById('fld-'+key); if(!el) return;
+      el.scrollIntoView({behavior:'smooth',block:'center'}); this.mark(key);
+    },
+    jumpMsg(id){
+      const el=document.getElementById('msg-'+this.selId+'-'+id); if(!el) return;
+      el.scrollIntoView({behavior:'smooth',block:'center'}); this.mark('m'+id);
+    },
+    pushAi(text,actions=[],delay=900){
+      const s=this.s; this.typing=true; this.scroll();
+      setTimeout(()=>{ this.typing=false; s.msgs.push({id:++s.n,r:'a',t:text,actions}); this.scroll() },delay);
+    },
+    scroll(){ this.$nextTick(()=>{ const c=this.$refs.chat; if(c) c.scrollTop=c.scrollHeight }) },
+    ask(qq){
+      const e=this.emp, s=this.s; s.msgs.push({id:++s.n,r:'u',t:qq.l});
+      if(qq.k==='gen'){
+        this.pushAi('以下是綜合評語與等第草稿，可直接套用至下方評分表：',[
+          {kind:'grade',val:e.suggest,label:'績效等第',why:'依三年表現與 360 評鑑綜合判斷'},
+          {kind:'rank',val:e.rank,label:'落點數字',why:'依部門內相對排序預估'},
+          {kind:'comment',val:e.reply.gen,label:'考績評語',why:e.reply.gen}]);
+      } else if(qq.k==='swot'){
+        this.pushAi(e.reply.swot+'\n\n依此，各指標的建議分數如下：',
+          e.kpiSug.map((x,i)=>({kind:'kpi',idx:i,val:x[0],label:KPIS[i].n,why:x[1]})));
+      } else {
+        this.pushAi(e.reply.ask);
+      }
+    },
+    send(){
+      const t=this.draft.trim(); if(!t) return;
+      const e=this.emp, s=this.s; s.msgs.push({id:++s.n,r:'u',t}); this.draft='';
+      const a=e.adj;
+      this.pushAi('已記錄您的補充考量，並納入校準判斷。依此建議調整「'+KPIS[a.idx].n+'」，並在評語中寫入具體事例作為佐證：',
+        [{kind:'kpi',idx:a.idx,val:a.score,label:KPIS[a.idx].n,why:a.why}]);
+    },
+    flash(m){ this.toastMsg=m; this.toast=true; clearTimeout(this._tt); this._tt=setTimeout(()=>this.toast=false,2800) }
+  }
+}
+</script>
+</body>
+</html>
+
